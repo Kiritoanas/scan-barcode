@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner with Product Details</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f9;
+        }
+        video {
+            width: 100%;
+            max-width: 300px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #007bff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .form-field {
+            margin: 10px 0;
+            width: 100%;
+            max-width: 300px;
+            text-align: left;
+        }
+        .form-field label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-field input {
+            width: 100%;
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <h1>Barcode Scanner</h1>
+    <video id="camera-stream" autoplay playsinline></video>
+    <button id="start-button">Start Scanning</button>
+
+    <div id="form-container" style="display: none;">
+        <div class="form-field">
+            <label for="barcode">Barcode:</label>
+            <input type="text" id="barcode" readonly>
+        </div>
+        <div class="form-field">
+            <label for="product-name">Product Name:</label>
+            <input type="text" id="product-name" placeholder="Enter product name or auto-fill">
+        </div>
+        <div class="form-field">
+            <label for="quantity">Quantity:</label>
+            <input type="number" id="quantity" placeholder="Enter quantity">
+        </div>
+        <button id="submit-button">Submit</button>
+    </div>
+
+    <div id="result"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@latest"></script>
+    <script>
+        const cameraStream = document.getElementById('camera-stream');
+        const startButton = document.getElementById('start-button');
+        const formContainer = document.getElementById('form-container');
+        const barcodeField = document.getElementById('barcode');
+        const productNameField = document.getElementById('product-name');
+        const quantityField = document.getElementById('quantity');
+        const submitButton = document.getElementById('submit-button');
+        const resultDiv = document.getElementById('result');
+
+        let scanner;
+
+        startButton.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                cameraStream.srcObject = stream;
+
+                scanner = new ZXing.BrowserMultiFormatReader();
+                scanner.decodeFromVideoDevice(null, 'camera-stream', async (result, error) => {
+                    if (result) {
+                        stopScanner();
+
+                        // Display the barcode in the barcode field
+                        barcodeField.value = result.text;
+
+                        // Try to fetch product name automatically
+                        const productName = await fetchProductName(result.text);
+                        if (productName) {
+                            productNameField.value = productName;
+                        }
+
+                        // Show the form container
+                        formContainer.style.display = 'block';
+                    }
+                    if (error && !(error instanceof ZXing.NotFoundException)) {
+                        console.error(error);
+                        resultDiv.textContent = 'Error scanning barcode';
+                        stopScanner();
+                    }
+                });
+
+                startButton.disabled = true;
+            } catch (error) {
+                console.error('Error accessing the camera:', error);
+                resultDiv.textContent = 'Camera access denied or unavailable';
+            }
+        });
+
+        function stopScanner() {
+            if (scanner) {
+                scanner.reset();
+                scanner = null;
+            }
+            if (cameraStream.srcObject) {
+                const tracks = cameraStream.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                cameraStream.srcObject = null;
+            }
+            startButton.disabled = false;
+        }
+
+        async function fetchProductName(barcode) {
+            try {
+                // Use Open Food Facts API to fetch product details
+                const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+                const data = await response.json();
+
+                if (data.status === 1 && data.product.product_name) {
+                    return data.product.product_name;
+                } else {
+                    return null; // Product name not found
+                }
+            } catch (error) {
+                console.error('Error fetching product name:', error);
+                return null;
+            }
+        }
+
+        submitButton.addEventListener('click', () => {
+            const barcode = barcodeField.value;
+            const productName = productNameField.value;
+            const quantity = quantityField.value;
+
+            if (!barcode || !productName || !quantity) {
+                resultDiv.textContent = 'Please fill all fields.';
+                return;
+            }
+
+            // Display submitted data
+            resultDiv.innerHTML = `
+                <p><strong>Barcode:</strong> ${barcode}</p>
+                <p><strong>Product Name:</strong> ${productName}</p>
+                <p><strong>Quantity:</strong> ${quantity}</p>
+            `;
+
+            // Reset the form
+            barcodeField.value = '';
+            productNameField.value = '';
+            quantityField.value = '';
+            formContainer.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
